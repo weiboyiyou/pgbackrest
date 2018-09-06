@@ -99,6 +99,7 @@ cmdArchiveGet(void)
 {
     FUNCTION_DEBUG_VOID(logLevelDebug);
 
+    // Set the result assuming the archive file will not be found
     int result = 1;
 
     MEM_CONTEXT_TEMP_BEGIN()
@@ -146,8 +147,6 @@ cmdArchiveGet(void)
                 {
                     storageRemoveP(
                         storageSpool(), strNewFmt(STORAGE_SPOOL_ARCHIVE_IN "/%s.ok", strPtr(walSegment)), .errorOnMissing = true);
-
-                    LOG_INFO("unable to find WAL segment %s", strPtr(walSegment));
                     break;
                 }
 
@@ -175,8 +174,7 @@ cmdArchiveGet(void)
                     // Move (or copy if required) the file
                     storageMoveNP(source, destination);
 
-                    // Log success
-                    LOG_INFO("got WAL segment %s asynchronously", strPtr(walSegment));
+                    // Return success
                     result = 0;
 
                     // Get a list of WAL segments left in the queue
@@ -203,9 +201,6 @@ cmdArchiveGet(void)
                     // Fork off the async process
                     if (fork() == 0)
                     {
-                        // Async process returns 0 unless there is an error
-                        result = 0;
-
                         // Execute async process and catch exceptions
                         TRY_BEGIN()
                         {
@@ -254,7 +249,7 @@ cmdArchiveGet(void)
                         }
                         TRY_END();
 
-                        break;
+                        FUNCTION_DEBUG_RESULT(INT, 0);                  // {uncovered - async calls always return errors for now}
                     }
                     // Else mark async process as forked
                     else
@@ -273,6 +268,7 @@ cmdArchiveGet(void)
             }
             while (waitMore(wait));
         }
+        // Else perform synchronous get
         else
         {
             // Disable async if it was enabled
@@ -281,6 +277,12 @@ cmdArchiveGet(void)
             // Call synchronous get
             result = perlExec();
         }
+
+        // Log whether or not the file was found
+        if (result == 0)
+            LOG_INFO("found %s in the archive", strPtr(walSegment));
+        else
+            LOG_INFO("unable to find %s in the archive", strPtr(walSegment));
     }
     MEM_CONTEXT_TEMP_END();
 
